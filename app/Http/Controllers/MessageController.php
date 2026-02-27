@@ -32,8 +32,16 @@ class MessageController extends Controller
             'conversation_id' => 'nullable|string',
         ]);
 
+        // determine conversation id string for two participants
+        $conversationId = $data['conversation_id'] ?? sprintf(
+            'conversation.%d.%d',
+            min($me->id, $data['receiver_id']),
+            max($me->id, $data['receiver_id']),
+        );
+
         $message = Message::create(array_merge($data, [
             'sender_id' => $me->id,
+            'conversation_id' => $conversationId,
         ]));
 
         broadcast(new MessageSent($message))->toOthers();

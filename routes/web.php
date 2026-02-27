@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Laravel\WorkOS\Http\Middleware\ValidateSessionWithWorkOS;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\ChatController;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -11,6 +12,9 @@ Route::middleware([
     ValidateSessionWithWorkOS::class,
 ])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
+
+    // Chat UI
+    Route::get('chat', [ChatController::class, 'index'])->name('chat');
 
     // Simple message endpoints (MVP)
     Route::get('messages/{user}', [MessageController::class, 'index'])->name('messages.index');
