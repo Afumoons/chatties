@@ -19,6 +19,10 @@ Route::middleware([
     // Simple message endpoints (MVP)
     Route::get('messages/{user}', [MessageController::class, 'index'])->name('messages.index');
     Route::post('messages', [MessageController::class, 'store'])->name('messages.store');
+
+    // Message receipts
+    Route::patch('messages/{message}/delivered', [MessageController::class, 'markDelivered'])->name('messages.delivered');
+    Route::patch('messages/{message}/read', [MessageController::class, 'markRead'])->name('messages.read');
 });
 
 require __DIR__ . '/settings.php';

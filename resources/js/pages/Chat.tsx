@@ -16,6 +16,8 @@ interface Message {
     receiver_id: number;
     body: string;
     created_at: string;
+    delivered_at: string | null;
+    read_at: string | null;
     sender: User;
 }
 
@@ -30,6 +32,63 @@ export default function Chat() {
     const [online, setOnline] = useState(false);
 
     const messagesEnd = useRef<HTMLDivElement>(null);
+    const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+    // mark incoming messages as delivered
+    const markDelivered = (messageId: number) => {
+        axios
+            .patch(toUrl(route('messages.delivered', messageId)), {})
+            .catch(() => {});
+        setMessages((prev) =>
+            prev.map((m) =>
+                m.id === messageId && !m.delivered_at
+                    ? { ...m, delivered_at: new Date().toISOString() }
+                    : m,
+            ),
+        );
+    };
+
+    // mark message as read when visible
+    const markRead = (messageId: number) => {
+        axios
+            .patch(toUrl(route('messages.read', messageId)), {})
+            .catch(() => {});
+        setMessages((prev) =>
+            prev.map((m) =>
+                m.id === messageId && !m.read_at
+                    ? { ...m, read_at: new Date().toISOString() }
+                    : m,
+            ),
+        );
+    };
+
+    // watch for message visibility and mark as read
+    useEffect(() => {
+        if (!selected) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        const messageId = parseInt(
+                            entry.target.getAttribute('data-message-id') || '',
+                        );
+                        const msg = messages.find((m) => m.id === messageId);
+                        if (msg && msg.receiver_id === me.id && !msg.read_at) {
+                            markRead(messageId);
+                        }
+                    }
+                });
+            },
+            { threshold: 0.5 },
+        );
+
+        Object.values(messageRefs.current).forEach((ref) => {
+            if (ref) observer.observe(ref);
+        });
+
+        return () => observer.disconnect();
+    }, [messages, selected, me.id]);
 
     useEffect(() => {
         // scroll to bottom when messages change
@@ -61,7 +120,35 @@ export default function Chat() {
                 })
                 .listen('MessageSent', (e: { message: Message }) => {
                     setMessages((prev) => [...prev, e.message]);
+                    // if we're the receiver, mark as delivered immediately
+                    if (e.message.receiver_id === me.id) {
+                        setTimeout(() => markDelivered(e.message.id), 100);
+                    }
                 })
+                .listen(
+                    'MessageDelivered',
+                    (e: { message_id: number; delivered_at: string }) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === e.message_id
+                                    ? { ...m, delivered_at: e.delivered_at }
+                                    : m,
+                            ),
+                        );
+                    },
+                )
+                .listen(
+                    'MessageRead',
+                    (e: { message_id: number; read_at: string }) => {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === e.message_id
+                                    ? { ...m, read_at: e.read_at }
+                                    : m,
+                            ),
+                        );
+                    },
+                )
                 .listenForWhisper('typing', (e: { user_id: number }) => {
                     setTypingUsers((prev) => ({ ...prev, [e.user_id]: true }));
                     setTimeout(() => {
@@ -158,20 +245,50 @@ export default function Chat() {
                             messages.map((msg) => (
                                 <div
                                     key={msg.id}
-                                    className={`mb-2 flex ${msg.sender_id === me.id ? 'justify-end' : ''}`}
+                                    data-message-id={msg.id}
+                                    ref={(el) => {
+                                        if (el)
+                                            messageRefs.current[msg.id] = el;
+                                    }}
+                                    className={`mb-4 flex ${msg.sender_id === me.id ? 'justify-end' : ''}`}
                                 >
                                     <div
-                                        className={`max-w-[60%] rounded-lg p-2 whitespace-pre-wrap ${
+                                        className={`max-w-[60%] rounded-lg p-3 whitespace-pre-wrap ${
                                             msg.sender_id === me.id
                                                 ? 'bg-blue-500 text-white'
                                                 : 'bg-gray-200 dark:bg-gray-700'
                                         }`}
                                     >
                                         {msg.body}
-                                        <div className="mt-1 text-xs text-gray-500">
-                                            {new Date(
-                                                msg.created_at,
-                                            ).toLocaleTimeString()}
+                                        <div className="mt-2 flex items-center justify-between text-xs">
+                                            <span
+                                                className={
+                                                    msg.sender_id === me.id
+                                                        ? 'text-blue-100'
+                                                        : 'text-gray-500'
+                                                }
+                                            >
+                                                {new Date(
+                                                    msg.created_at,
+                                                ).toLocaleTimeString()}
+                                            </span>
+                                            {msg.sender_id === me.id && (
+                                                <span className="ml-2">
+                                                    {msg.read_at ? (
+                                                        <span title="Read">
+                                                            ✓✓
+                                                        </span>
+                                                    ) : msg.delivered_at ? (
+                                                        <span title="Delivered">
+                                                            ✓
+                                                        </span>
+                                                    ) : (
+                                                        <span title="Sending">
+                                                            •
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
